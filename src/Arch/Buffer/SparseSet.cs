@@ -107,6 +107,19 @@ internal class SparseArray
             Size++;
         }
     }
+    
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void Remove(int index)
+    {
+        lock (this)
+        {
+            // Skip since entity fits into array
+            if (index < Capacity)
+            {
+                Entities[index] = -1;
+            }
+        }
+    }
 
     // NOTE: Should this be `Contains` to follow other existing .NET APIs (ICollection<T>.Contains(T))?
     /// <summary>
@@ -350,6 +363,23 @@ internal class SparseSet
         }
 
         array.Set(index, in component);
+    }
+    
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void Remove<T>(int index)
+    {
+        var componentType = Component<T>.ComponentType;
+        
+        if (HasSparseArray(componentType) == false)
+        {
+            return;
+        }
+        
+        var array = GetSparseArray(componentType);
+        lock (array)
+        {
+            array.Remove(index);
+        }
     }
 
     // NOTE: Should this be `Contains` to follow other existing .NET APIs (ICollection<T>.Contains(T))?

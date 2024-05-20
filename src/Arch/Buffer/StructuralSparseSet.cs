@@ -97,6 +97,14 @@ internal class StructuralSparseArray
     {
         return index < Entities.Length && Entities[index] != -1;
     }
+    
+    public void Remove(int index)
+    {
+        if (index < Entities.Length)
+        {
+            Entities[index] = -1;
+        }
+    }
 
     /// <summary>
     ///     Clears this <see cref="SparseArray"/> instance and sets its <see cref="Size"/> to 0.
@@ -278,6 +286,22 @@ internal class StructuralSparseSet
             {
                 array.Add(index);
             }
+        }
+    }
+    
+    public void Remove<T>(int index)
+    {
+        var componentType = Component<T>.ComponentType;
+        
+        if (Components.Length <= componentType.Id || HasStructuralSparseArray(componentType) == false)
+        {
+            return;
+        }
+        
+        var array = GetStructuralSparseArray(componentType);
+        lock (array)
+        {
+            array.Remove(index);
         }
     }
 

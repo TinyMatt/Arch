@@ -1,3 +1,7 @@
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using Arch.Core;
 using Arch.Core.Extensions;
 using Arch.Core.Extensions.Internal;
@@ -130,7 +134,7 @@ public sealed partial class CommandBuffer : IDisposable
     /// </summary>
     /// <param name="entity">The <see cref="Entity"/> to register.</param>
     /// <param name="info">Its <see cref="BufferedEntityInfo"/> which stores indexes used for <see cref="CommandBuffer"/> operations.</param>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+
     internal void Register(in Entity entity, out BufferedEntityInfo info)
     {
         var setIndex = Sets.Create(in entity);
@@ -152,7 +156,7 @@ public sealed partial class CommandBuffer : IDisposable
     /// </summary>
     /// <param name="entity">The <see cref="Entity"/> with a negative or positive id to resolve.</param>
     /// <returns>Its real <see cref="Entity"/>.</returns>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+
     internal Entity Resolve(Entity entity)
     {
         var entityIndex = BufferedEntityInfo[entity.Id].Index;
@@ -165,7 +169,7 @@ public sealed partial class CommandBuffer : IDisposable
     /// </summary>
     /// <param name="types">The <see cref="Entity"/>'s component structure/<see cref="Archetype"/>.</param>
     /// <returns>The buffered <see cref="Entity"/> with an index of <c>-1</c>.</returns>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+
     public Entity Create(ComponentType[] types)
     {
         lock (this)
@@ -185,7 +189,7 @@ public sealed partial class CommandBuffer : IDisposable
     ///     Will be destroyed during <see cref="Playback"/>.
     /// </summary>
     /// <param name="entity">The <see cref="Entity"/> to destroy.</param>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+
     public void Destroy(in Entity entity)
     {
         lock (this)
@@ -207,7 +211,7 @@ public sealed partial class CommandBuffer : IDisposable
     /// <typeparam name="T">The component type.</typeparam>
     /// <param name="entity">The <see cref="Entity"/>.</param>
     /// <param name="component">The component value.</param>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+
     public void Set<T>(in Entity entity, in T? component = default)
     {
         BufferedEntityInfo info;
@@ -230,7 +234,7 @@ public sealed partial class CommandBuffer : IDisposable
     /// <typeparam name="T">The component type.</typeparam>
     /// <param name="entity">The <see cref="Entity"/>.</param>
     /// <param name="component">The component value.</param>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+
     public void Add<T>(in Entity entity, in T? component = default)
     {
         BufferedEntityInfo info;
@@ -252,7 +256,7 @@ public sealed partial class CommandBuffer : IDisposable
     /// </summary>
     /// <typeparam name="T">The component type.</typeparam>
     /// <param name="entity">The <see cref="Entity"/>.</param>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+
     public void Remove<T>(in Entity entity)
     {
         BufferedEntityInfo info;
@@ -275,10 +279,11 @@ public sealed partial class CommandBuffer : IDisposable
     /// </remarks>
     /// <param name="world">The <see cref="World"/> where the commands will be playbacked too.</param>
     /// <param name="dispose">If true it will clear the recorded operations after they were playbacked, if not they will stay.</param>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+
     public void Playback(World world, bool dispose = true)
     {
         // Create recorded entities.
+        int createCount = Creates.Count;
         foreach (var cmd in Creates)
         {
             var entity = world.Create(cmd.Types);
@@ -286,7 +291,8 @@ public sealed partial class CommandBuffer : IDisposable
         }
 
         // Play back additions.
-        for (var index = 0; index < Adds.Count; index++)
+        int addCount = Adds.Count;
+        for (var index = 0; index < addCount; index++)
         {
             var wrappedEntity = Adds.Entities[index];
             for (var i = 0; i < Adds.UsedSize; i++)
@@ -311,12 +317,13 @@ public sealed partial class CommandBuffer : IDisposable
             var entity = Resolve(wrappedEntity.Entity);
             Debug.Assert(world.IsAlive(entity), $"CommandBuffer can not to add components to the dead {wrappedEntity.Entity}");
 
-            AddRange(world, entity, _addTypes);
+            AddRange(world, entity, _addTypes.Span);
             _addTypes.Clear();
         }
 
         // Play back sets.
-        for (var index = 0; index < Sets.Count; index++)
+        int setCount = Sets.Count;
+        for (var index = 0; index < setCount; index++)
         {
             // Get wrapped entity
             var wrappedEntity = Sets.Entities[index];
@@ -326,7 +333,7 @@ public sealed partial class CommandBuffer : IDisposable
             Debug.Assert(world.IsAlive(entity), $"CommandBuffer can not to set components to the dead {wrappedEntity.Entity}");
 
             // Get entity chunk
-            var entityInfo = world.EntityInfo[entity.Id];
+            var entityInfo = world.EntityInfo.GetEntityData(entity.Id);
             var archetype = entityInfo.Archetype;
             ref readonly var chunk = ref archetype.GetChunk(entityInfo.Slot.ChunkIndex);
             var chunkIndex = entityInfo.Slot.Index;
@@ -360,7 +367,8 @@ public sealed partial class CommandBuffer : IDisposable
         }
 
         // Play back removals.
-        for (var index = 0; index < Removes.Count; index++)
+        int removeCount = Removes.Count;
+        for (var index = 0; index < removeCount; index++)
         {
             var wrappedEntity = Removes.Entities[index];
             for (var i = 0; i < Removes.UsedSize; i++)
@@ -383,11 +391,12 @@ public sealed partial class CommandBuffer : IDisposable
             var entity = Resolve(wrappedEntity.Entity);
             Debug.Assert(world.IsAlive(entity), $"CommandBuffer can not to remove components from the dead {wrappedEntity.Entity}");
 
-            world.RemoveRange(entity, _removeTypes);
+            world.RemoveRange(entity, _removeTypes.Span);
             _removeTypes.Clear();
         }
 
         // Play back destructions.
+        int destroyCount = Destroys.Count;
         foreach (var cmd in Destroys)
         {
             world.Destroy(Entities[cmd]);
@@ -402,11 +411,26 @@ public sealed partial class CommandBuffer : IDisposable
         Size = 0;
         Entities.Clear();
         BufferedEntityInfo.Clear();
-        Creates.Clear();
-        Sets.Clear();
-        Adds.Clear();
-        Removes.Clear();
-        Destroys.Clear();
+        if (createCount > 0)
+        {
+            Creates.Clear();
+        }
+        if (setCount > 0)
+        {
+            Sets.Clear();
+        }
+        if (addCount > 0)
+        {
+            Adds.Clear();
+        }
+        if (removeCount > 0)
+        {
+            Removes.Clear();
+        }
+        if (destroyCount > 0)
+        {
+            Destroys.Clear();
+        }
         _addTypes.Clear();
         _removeTypes.Clear();
     }
@@ -432,16 +456,16 @@ public sealed partial class CommandBuffer : IDisposable
 public sealed partial class CommandBuffer
 {
     /// <summary>
-    ///     Adds an list of new components to the <see cref="Entity"/> and moves it to the new <see cref="Archetype"/>.
+    ///     Adds a list of new components to the <see cref="Entity"/> and moves it to the new <see cref="Archetype"/>.
     /// </summary>
     /// <param name="world">The world to operate on.</param>
     /// <param name="entity">The <see cref="Entity"/>.</param>
     /// <param name="components">A <see cref="IList{T}"/> of <see cref="ComponentType"/>'s, those are added to the <see cref="Entity"/>.</param>
     [SkipLocalsInit]
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static void AddRange(World world, Entity entity, IList<ComponentType> components)
+    internal static void AddRange(World world, Entity entity, Span<ComponentType> components)
     {
-        var oldArchetype = world.EntityInfo.GetArchetype(entity.Id);
+        ref var data = ref world.EntityInfo.EntityData[entity.Id];
+        var oldArchetype = data.Archetype;
 
         // BitSet to stack/span bitset, size big enough to contain ALL registered components.
         Span<uint> stack = stackalloc uint[BitSet.RequiredLength(ComponentRegistry.Size)];
@@ -450,7 +474,7 @@ public sealed partial class CommandBuffer
         // Create a span bitset, doing it local saves us headache and gargabe
         var spanBitSet = new SpanBitSet(stack);
 
-        for (var index = 0; index < components.Count; index++)
+        for (var index = 0; index < components.Length; index++)
         {
             var type = components[index];
             spanBitSet.SetBit(type.Id);
@@ -458,9 +482,10 @@ public sealed partial class CommandBuffer
 
         if (!world.TryGetArchetype(spanBitSet.GetHashCode(), out var newArchetype))
         {
-            newArchetype = world.GetOrCreate(oldArchetype.Types.Add(components));
+            var newSignature = Signature.Add(oldArchetype.Signature, components);
+            newArchetype = world.GetOrCreate(newSignature);
         }
 
-        world.Move(entity, oldArchetype, newArchetype, out _);
+        world.Move(entity, ref data, oldArchetype, newArchetype, out _);
     }
 }
